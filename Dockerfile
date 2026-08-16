@@ -1,36 +1,34 @@
-# syntax=docker/dockerfile:1.7
+# ---------- Build Stage ----------
+FROM node:20-alpine AS builder
 
-ARG NODE_VERSION=20
-
-# ----- stage 1: install production npm packages only -----
-FROM node:${NODE_VERSION}-alpine AS deps
-WORKDIR /app
-# copy manifests first (better layer cache)
-COPY package.json package-lock.json ./
-# npm ci = clean install from lockfile (reproducible)
-# --omit=dev = skip supertest and other test tools
-RUN npm ci --omit=dev && npm cache clean --force
-
-# ----- stage 2: the image you run -----
-FROM node:${NODE_VERSION}-alpine AS runner
 WORKDIR /app
 
-ENV NODE_ENV=production \
-    PORT=3000
+COPY package*.json ./
+RUN npm ci --only=production && npm cache clean --force
 
-# non-root user (safer)
-RUN addgroup -S app && adduser -S app -G app
+COPY . .
 
-# reuse stage 1 packages
-COPY --from=deps /app/node_modules ./node_modules
-COPY package.json ./
-# only application source
-COPY src ./src
+# ---------- Production Stage ----------
+FROM node:20-alpine
 
-USER app
+# Security: non-root user
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001
+
+WORKDIR /app
+
+COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=nodejs:nodejs /app/package*.json ./
+COPY --from=builder --chown=nodejs:nodejs /app/src ./src
+
+USER nodejs
+
+ENV NODE_ENV=production
+ENV PORT=3000
+
 EXPOSE 3000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-  CMD wget -qO- http://127.0.0.1:3000/health || exit 1
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"
 
-CMD ["node", "src/server.js"]
+CMD ["node", "src/index.js"]

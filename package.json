@@ -1,24 +1,25 @@
 {
-  "name": "nodejs_simple",
+  "name": "node_simple",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
-  "directories": {
-    "test": "test"
-  },
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
-    "test": "node --test"
+"start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ak9347128658/node_simple.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/ak9347128658/node_simple/issues"
+  },
+  "homepage": "https://github.com/ak9347128658/node_simple#readme",
   "dependencies": {
     "express": "^5.2.1"
-  },
-  "devDependencies": {
-    "supertest": "^7.2.2"
   }
 }
