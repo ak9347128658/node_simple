@@ -1,0 +1,22 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: nodejs-simple:local
+    container_name: nodejs-simple
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 3000
+      APP_VERSION: ${APP_VERSION:-local}
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
