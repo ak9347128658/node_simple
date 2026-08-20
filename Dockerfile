@@ -1,34 +1,32 @@
-# ---------- Build Stage ----------
-FROM node:20-alpine AS builder
+# ---- build stage: install production deps only ----
+FROM node:20-alpine AS deps
 
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm ci --only=production && npm cache clean --force
+# Copy lockfile first so Docker cache is reused when only source changes
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
 
-COPY . .
+# ---- runtime stage: tiny final image ----
+FROM node:20-alpine AS runner
 
-# ---------- Production Stage ----------
-FROM node:20-alpine
-
-# Security: non-root user
-RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nodejs -u 1001
+# Non-root user — if the process is exploited it is not root inside the box
+RUN addgroup -S app && adduser -S app -G app
 
 WORKDIR /app
-
-COPY --from=builder --chown=nodejs:nodejs /app/node_modules ./node_modules
-COPY --from=builder --chown=nodejs:nodejs /app/package*.json ./
-COPY --from=builder --chown=nodejs:nodejs /app/src ./src
-
-USER nodejs
 
 ENV NODE_ENV=production
 ENV PORT=3000
 
+COPY --from=deps /app/node_modules ./node_modules
+COPY package.json ./
+COPY src ./src
+
+USER app
+
 EXPOSE 3000
 
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:3000/health || exit 1
 
 CMD ["node", "src/index.js"]

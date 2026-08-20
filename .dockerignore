@@ -4,9 +4,8 @@ npm-debug.log
 .github
 .env
 .env.*
+!.env.example
+Dockerfile
+docker-compose.yml
+README.md
 *.md
-Dockerfile*
-docker-compose*
-.gitignore
-coverage
-.nyc_output
