@@ -1,20 +1,24 @@
-version: "3.8"
-
 services:
   app:
-    image: ghcr.io/ak9347128658/node_simple:latest
-    container_name: private-nodejs-app
+    image: ghcr.io/YOUR_GITHUB_USERNAME/YOUR_REPO_NAME:latest
+    container_name: node-app
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "80:3000"
+    env_file:
+      - .env
     environment:
-      - NODE_ENV=production
-      - PORT=3000
-    # env_file:
-    #   - .env
+      NODE_ENV: production
+      PORT: "3000"
+      APP_VERSION: ${APP_VERSION:-unknown}
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/health"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
