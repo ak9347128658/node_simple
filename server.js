@@ -9,7 +9,7 @@ app.get("/health", (_req, res) => {
 });
 
 app.get("/", (_req, res) => {
-  res.send(`Hello from Adnan on EC2! Version: ${process.env.APP_VERSION || "dev"}`);
+  res.send(`Hello from Asif Khan on EC2! Version: ${process.env.APP_VERSION || "dev"}`);
 });
 
 app.listen(PORT, "0.0.0.0", () => {
