@@ -1,0 +1,80 @@
+name: Build and Deploy to EC2 (No Docker)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:        # allows manual runs from the Actions tab
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+  deploy:
+    name: Deploy to EC2
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Copy the repo files to EC2 over SCP/SSH.
+      # We exclude node_modules & .git — deps are installed on the host.
+      - name: Copy files to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "."
+          target: "/var/www/node-app"
+          rm: false                         # don't wipe target first (keeps node_modules cache)
+          overwrite: true
+          strip_components: 0
+
+      # Install prod deps on the host and (re)start via PM2.
+      - name: Install deps & restart app
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            cd /var/www/node-app
+
+            # Load nvm/node path for non-interactive shells (NodeSource installs globally,
+            # but this guards against PATH issues in SSH sessions).
+            export PATH=$PATH:/usr/bin:/usr/local/bin
+
+            # 1. Install exact production dependencies.
+            npm ci --omit=dev
+
+            # 2. Reload the app with zero-downtime if already running, else start it.
+            #    'startOrReload' starts on first deploy and gracefully reloads after.
+            export APP_VERSION="${GITHUB_SHA::7}"
+            pm2 startOrReload ecosystem.config.js --update-env
+
+            # 3. Persist the process list so it survives reboots.
+            pm2 save
+        env:
+          GITHUB_SHA: ${{ github.sha }}
