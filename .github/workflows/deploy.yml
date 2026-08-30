@@ -37,30 +37,36 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Copy the repo files to EC2 over SCP/SSH.
-      # IMPORTANT: never copy .git — its objects can have read-restricted
-      # permissions that make `tar` fail with "Cannot open: Permission denied".
-      # We also skip node_modules (installed on the host) and CI files.
+      # Stage ONLY the files we want to ship into a clean folder.
+      # This is the reliable fix for the ".git ... Cannot open: Permission denied"
+      # tar error: scp-action tars whatever you point 'source' at, and its own
+      # 'exclude' option is unreliable across versions. By copying into a clean
+      # './deploy' directory that never contains .git, tar can never touch it.
+      - name: Stage deployable files
+        run: |
+          mkdir -p deploy
+          # rsync everything EXCEPT the git history, node_modules, and CI files.
+          rsync -a \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='.github' \
+            --exclude='deploy' \
+            ./ deploy/
+          echo "Staged files:" && ls -la deploy
+
+      # Copy the CLEAN staged folder to EC2. 'source' points at ./deploy so
+      # .git is physically absent from what gets tarred.
       - name: Copy files to EC2
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: "."
+          source: "deploy/*"
           target: "/var/www/node-app"
           rm: false                         # don't wipe target first (keeps node_modules cache)
           overwrite: true
-          strip_components: 0
-          # Exclude .git, node_modules, and other files that must not be tarred/shipped.
-          # This is the fix for: tar: ./.git/objects/...: Cannot open: Permission denied
-          exclude: |
-            .git
-            .git/**
-            node_modules
-            node_modules/**
-            .github
-            .github/**
+          strip_components: 1               # drop the leading 'deploy/' folder
 
       # Install prod deps on the host and (re)start via PM2.
       - name: Install deps & restart app
