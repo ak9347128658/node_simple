@@ -1,0 +1,27 @@
+docker build -t nodejs-app:local .
+
+docker run --rm -p 3000:3000 nodejs-app:local
+
+
+$ aws ecr create-repository \
+  --repository-name nodejs-app \
+  --region ap-south-1 \
+  --image-scanning-configuration scanOnPush=true
+
+output:
+{                                                                                                   
+    "repository": {
+        "repositoryArn": "arn:aws:ecr:ap-south-1:598886663176:repository/nodejs-app",
+        "registryId": "598886663176",
+        "repositoryName": "nodejs-app",
+        "repositoryUri": "598886663176.dkr.ecr.ap-south-1.amazonaws.com/nodejs-app",
+        "createdAt": "2026-08-30T19:59:48.766000+05:30",
+        "imageTagMutability": "MUTABLE",
+        "imageScanningConfiguration": {
+            "scanOnPush": true
+        },
+        "encryptionConfiguration": {
+            "encryptionType": "AES256"
+        }
+    }
+}

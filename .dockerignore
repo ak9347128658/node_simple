@@ -2,10 +2,7 @@ node_modules
 npm-debug.log
 .git
 .github
-.env
-.env.*
-!.env.example
-Dockerfile
-docker-compose.yml
-README.md
+.aws
 *.md
+.env
+coverage

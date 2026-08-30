@@ -1,16 +1,23 @@
 {
-  "name": "nodejs-aws-docker-demo",
+  "name": "node_simple",
   "version": "1.0.0",
-  "private": true,
-  "main": "src/index.js",
+  "description": "",
+  "main": "index.js",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
-    "test": "node --test"
+    "start": "node server.js"
   },
-  "engines": {
-    "node": ">=20"
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ak9347128658/node_simple.git"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/ak9347128658/node_simple/issues"
+  },
+  "homepage": "https://github.com/ak9347128658/node_simple#readme",
   "dependencies": {
     "express": "^5.2.1"
   }
