@@ -1,75 +1,66 @@
-name: Build and Deploy to EC2 (No Docker)
+name: Build and Deploy to EC2
 
+# Trigger: run on every push to main. Adjust the branch as needed.
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:        # allows manual runs from the Actions tab
+  workflow_dispatch:   # allows manual runs from the Actions tab
 
+# Concurrency: cancel an in-progress deploy if a newer commit is pushed.
 concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  IMAGE_NAME: ghcr.io/${{ github.repository }}   # e.g. ghcr.io/user/repo
+
 jobs:
-  build-and-test:
-    name: Build & Test
+  build-and-push:
+    name: Build & Push Image
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write          # required to push to GHCR
+    outputs:
+      image_tag: ${{ steps.meta.outputs.tag }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      # Tag the image with the short commit SHA for traceability + 'latest'.
+      - name: Compute image tag
+        id: meta
+        run: echo "tag=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          node-version: 18
-          cache: npm
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}   # built-in, no setup needed
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run tests
-        run: npm test
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            APP_VERSION=${{ steps.meta.outputs.tag }}
 
   deploy:
     name: Deploy to EC2
-    needs: build-and-test
+    needs: build-and-push
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      # Stage ONLY the files we want to ship into a clean folder.
-      # This is the reliable fix for the ".git ... Cannot open: Permission denied"
-      # tar error: scp-action tars whatever you point 'source' at, and its own
-      # 'exclude' option is unreliable across versions. By copying into a clean
-      # './deploy' directory that never contains .git, tar can never touch it.
-      - name: Stage deployable files
-        run: |
-          mkdir -p deploy
-          # rsync everything EXCEPT the git history, node_modules, and CI files.
-          rsync -a \
-            --exclude='.git' \
-            --exclude='node_modules' \
-            --exclude='.github' \
-            --exclude='deploy' \
-            ./ deploy/
-          echo "Staged files:" && ls -la deploy
-
-      # Copy the CLEAN staged folder to EC2. 'source' points at ./deploy so
-      # .git is physically absent from what gets tarred.
-      - name: Copy files to EC2
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          source: "deploy/*"
-          target: "/var/www/node-app"
-          rm: false                         # don't wipe target first (keeps node_modules cache)
-          overwrite: true
-          strip_components: 1               # drop the leading 'deploy/' folder
-
-      # Install prod deps on the host and (re)start via PM2.
-      - name: Install deps & restart app
+      - name: Deploy over SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -77,21 +68,29 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             set -e
-            cd /var/www/node-app
+            IMAGE="ghcr.io/${{ github.repository }}"
+            TAG="${{ needs.build-and-push.outputs.image_tag }}"
 
-            # Load nvm/node path for non-interactive shells (NodeSource installs globally,
-            # but this guards against PATH issues in SSH sessions).
-            export PATH=$PATH:/usr/bin:/usr/local/bin
+            # 1. Authenticate to GHCR so we can pull the private image.
+            echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-            # 1. Install exact production dependencies.
-            npm ci --omit=dev
+            # 2. Pull the freshly built image by its immutable SHA tag.
+            docker pull "$IMAGE:$TAG"
 
-            # 2. Reload the app with zero-downtime if already running, else start it.
-            #    'startOrReload' starts on first deploy and gracefully reloads after.
-            export APP_VERSION="${GITHUB_SHA::7}"
-            pm2 startOrReload ecosystem.config.js --update-env
+            # 3. Stop and remove the old container (ignore errors if none).
+            docker stop node-app || true
+            docker rm node-app || true
 
-            # 3. Persist the process list so it survives reboots.
-            pm2 save
-        env:
-          GITHUB_SHA: ${{ github.sha }}
+            # 4. Run the new container.
+            #    - restart=always: survives reboots and crashes
+            #    - map host :80 to container :3000 so users hit the app on port 80
+            docker run -d \
+              --name node-app \
+              --restart always \
+              -p 80:3000 \
+              -e NODE_ENV=production \
+              -e APP_VERSION="$TAG" \
+              "$IMAGE:$TAG"
+
+            # 5. Clean up dangling images to reclaim disk on the small instance.
+            docker image prune -f
