@@ -38,7 +38,9 @@ jobs:
         uses: actions/checkout@v4
 
       # Copy the repo files to EC2 over SCP/SSH.
-      # We exclude node_modules & .git — deps are installed on the host.
+      # IMPORTANT: never copy .git — its objects can have read-restricted
+      # permissions that make `tar` fail with "Cannot open: Permission denied".
+      # We also skip node_modules (installed on the host) and CI files.
       - name: Copy files to EC2
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -50,6 +52,15 @@ jobs:
           rm: false                         # don't wipe target first (keeps node_modules cache)
           overwrite: true
           strip_components: 0
+          # Exclude .git, node_modules, and other files that must not be tarred/shipped.
+          # This is the fix for: tar: ./.git/objects/...: Cannot open: Permission denied
+          exclude: |
+            .git
+            .git/**
+            node_modules
+            node_modules/**
+            .github
+            .github/**
 
       # Install prod deps on the host and (re)start via PM2.
       - name: Install deps & restart app
