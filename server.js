@@ -1,16 +1,17 @@
 const express = require("express");
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.get("/", (_req, res) => {
-  res.json({
-    message: "Hello from ECS Fargate",
-    commit: process.env.GIT_SHA || "local",
-  });
+// Health check endpoint — used to verify deployments quickly.
+app.get("/health", (_req, res) => {
+  res.status(200).json({ status: "ok", uptime: process.uptime() });
 });
 
-app.get("/health", (_req, res) => res.status(200).send("ok"));
+app.get("/", (_req, res) => {
+  res.send(`Hello from Node.js on EC2! Version: ${process.env.APP_VERSION || "dev"}`);
+});
 
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Listening on ${PORT}`);
+  console.log(`Server listening on port ${PORT}`);
 });
